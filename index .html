@@ -89,7 +89,7 @@ figure.wide{grid-column:1/-1}
 figure img{width:100%;display:block;border-radius:2px}
 figcaption{font:400 15px var(--body);color:var(--mute);margin-top:10px}
 figure.miss img{display:none}
-figure.miss::before{content:"Image could not be loaded. Check that the file exists on the Khurram32-results branch.";display:block;padding:34px 12px;text-align:center;font:400 13px var(--mono);color:var(--mute);border:1px dashed var(--line)}
+figure.miss::before{content:"Result image not found. Add this file to the repository results/ folder.";display:block;padding:34px 12px;text-align:center;font:400 13px var(--mono);color:var(--mute);border:1px dashed var(--line)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:30px}
 @media(max-width:820px){.two{grid-template-columns:1fr;gap:30px}}
 .two h3{font-size:22px;margin-bottom:12px}
@@ -176,10 +176,10 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
 <h2>What it catches, and what it doesn't.</h2>
 <p>Burglary, Stealing, Vandalism and Explosion are flagged roughly 75–85% of the time. Shoplifting and Robbery sit near 33–40%: short, low-motion events are hard for a clip-level motion feature.</p>
 <div class="figs">
-<figure><img src="https://raw.githubusercontent.com/Khurram32/ucf-crime-anomaly-detection-BiGRU-based-3D-CNN/Khurram32-results/roc_curve.png" alt="ROC curve on the test set" onerror="this.parentNode.classList.add('miss')"><figcaption>ROC curve</figcaption></figure>
-<figure><img src="https://raw.githubusercontent.com/Khurram32/ucf-crime-anomaly-detection-BiGRU-based-3D-CNN/Khurram32-results/class_detection.png" alt="Per-class detection rate" onerror="this.parentNode.classList.add('miss')"><figcaption>Per-class detection rate</figcaption></figure>
-<figure><img src="https://raw.githubusercontent.com/Khurram32/ucf-crime-anomaly-detection-BiGRU-based-3D-CNN/Khurram32-results/training_curves.png" alt="Training curves" onerror="this.parentNode.classList.add('miss')"><figcaption>Training curves</figcaption></figure>
-<figure><img src="https://raw.githubusercontent.com/Khurram32/ucf-crime-anomaly-detection-BiGRU-based-3D-CNN/Khurram32-results/score_timelines.png" alt="Segment score timelines for sample test videos" onerror="this.parentNode.classList.add('miss')"><figcaption>Score timelines, red anomalous and blue normal</figcaption></figure>
+<figure><img data-file="roc_curve.png" src="results/roc_curve.png" alt="ROC curve on the test set"><figcaption>ROC curve</figcaption></figure>
+<figure><img data-file="class_detection.png" src="results/class_detection.png" alt="Per-class detection rate"><figcaption>Per-class detection rate</figcaption></figure>
+<figure><img data-file="training_curves.png" src="results/training_curves.png" alt="Training curves"><figcaption>Training curves</figcaption></figure>
+<figure><img data-file="score_timelines.png" src="results/score_timelines.png" alt="Segment score timelines for sample test videos"><figcaption>Score timelines, red anomalous and blue normal</figcaption></figure>
 </div>
 <p class="note" style="max-width:70ch">Some anomalies are missed completely (Abuse028 stays at zero), and some fire from the first segment (Arrest007). Validation AUC is noisy, with dips near epochs 27 and 75, because the validation set is only about 160 videos.</p>
 </div></section>
@@ -236,53 +236,178 @@ video_score = segment_scores.max().item()   <span class="c"># higher = more anom
 <footer><div class="wrap"><span>MIT License</span><a href="https://github.com/Khurram32/ucf-crime-anomaly-detection-BiGRU-based-3D-CNN">Source on GitHub</a></div></footer>
 
 <script>
-(function(){
-var N=32,tl=document.getElementById('tl'),thr=document.getElementById('thr'),bars=[];
-for(var i=0;i<N;i++){var d=document.createElement('div');tl.insertBefore(d,thr);bars.push(d)}
-function rnd(i,s){var x=Math.sin(i*12.9898+s*78.233)*43758.5453;return x-Math.floor(x)}
-var P={
-explosion:function(i){return i<17?.04+.1*rnd(i,1):Math.min(.97,.55+.07*(i-17)+.12*rnd(i,2))},
-normal:function(i){return .06+.2*rnd(i,3)+(i===9?.12:0)},
-shoplift:function(i){return (i>=14&&i<=21)?.28+.2*rnd(i,4):.07+.12*rnd(i,5)},
-missed:function(i){return .01*rnd(i,6)}};
-var names={explosion:'Explosion',normal:'Normal street',shoplift:'Shoplifting',missed:'Missed entirely'};
-var cur='explosion',vals=[];
-function paint(){
- var t=+rng.value/100,mx=0;
- bars.forEach(function(b,i){var v=vals[i];if(v>mx)mx=v;b.style.height=Math.max(2,v*100)+'%';b.classList.toggle('hot',v>=t)});
- thr.style.bottom=(t*100)+'%';document.getElementById('thrl').textContent='threshold '+t.toFixed(2);
- document.getElementById('vs').textContent=mx.toFixed(2);
- var bad=mx>=t,v=document.getElementById('verdict');v.textContent=bad?'flagged anomalous':'normal';v.classList.toggle('bad',bad);
-}
-function load(k){cur=k;vals=bars.map(function(_,i){return P[k](i)});
- bars.forEach(function(b,i){b.style.transitionDelay=(i*14)+'ms'});
- document.getElementById('clipname').textContent=names[k];paint();
- setTimeout(function(){bars.forEach(function(b){b.style.transitionDelay='0ms'})},900)}
-var rng=document.getElementById('rng');rng.addEventListener('input',paint);
-document.querySelectorAll('.tabs button').forEach(function(b){b.addEventListener('click',function(){
- document.querySelectorAll('.tabs button').forEach(function(x){x.setAttribute('aria-pressed',x===b)});load(b.dataset.k)})});
-setTimeout(function(){load('explosion')},500);
+(function () {
+  'use strict';
 
-var info=[
-['Frames','Extracted PNG frames are grouped into 16-frame clips and resized to 112×112.'],
-['R3D-18','A 3D CNN pretrained on Kinetics-400 turns each clip into a 512-number motion feature. It stays frozen, and features are cached to disk.'],
-['32 segments','Clip features are mean-pooled into T = 32 segments per video and L2-normalised, so every video has the same shape.'],
-['BiGRU','Linear(512→256) with ReLU and dropout, then a bidirectional GRU (2×128) reads the segments in both directions. This is the part that trains.'],
-['Score','An MLP head and sigmoid give each segment a score from 0 to 1. The video score is the maximum across segments.']];
-var pb=document.querySelectorAll('#pipe button'),det=document.getElementById('detail');
-function pick(i){pb.forEach(function(b,j){b.setAttribute('aria-selected',i===j)});
- det.innerHTML='<span class="cap">'+info[i][0]+'</span>'+info[i][1]}
-pb.forEach(function(b){b.addEventListener('click',function(){pick(+b.dataset.i)})});
-pick(0);
-var seen=false;new IntersectionObserver(function(e,o){if(e[0].isIntersecting&&!seen){seen=true;o.disconnect();
- if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
- pb.forEach(function(b,i){setTimeout(function(){b.classList.add('sweep');setTimeout(function(){b.classList.remove('sweep')},380)},i*260)})}},{threshold:.6}).observe(document.getElementById('pipe'));
+  function init() {
+    // Try common locations for result plots. The first valid URL is used.
+    var repo = 'https://raw.githubusercontent.com/Khurram32/ucf-crime-anomaly-detection-BiGRU-based-3D-CNN/';
+    var imageBases = [
+      'results/',
+      'outputs_frames/',
+      'outputs_frames/results/',
+      'Khurram32-results/'
+    ];
+    document.querySelectorAll('figure img[data-file]').forEach(function (img) {
+      var file = img.getAttribute('data-file');
+      var candidates = imageBases.map(function (base) { return repo + 'main/' + base + file; });
+      candidates.push(repo + 'Khurram32-results/' + file);
+      var index = 0;
+      function tryNext() {
+        if (index >= candidates.length) {
+          img.style.display = 'none';
+          img.parentNode.classList.add('miss');
+          return;
+        }
+        img.src = candidates[index++];
+      }
+      img.addEventListener('error', tryNext);
+      tryNext();
+    });
 
-document.querySelectorAll('.copy').forEach(function(b){b.addEventListener('click',function(){
- var t=b.parentNode.querySelector('pre').innerText;
- (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){b.textContent='Copied'},function(){b.textContent='Press Ctrl+C'});
- setTimeout(function(){b.textContent='Copy'},1500)})});
+    // Interactive anomaly-score illustration.
+    var N = 32;
+    var tl = document.getElementById('tl');
+    var thr = document.getElementById('thr');
+    if (tl && thr) {
+      var bars = [];
+      for (var i = 0; i < N; i++) {
+        var bar = document.createElement('div');
+        bar.setAttribute('aria-hidden', 'true');
+        tl.insertBefore(bar, thr);
+        bars.push(bar);
+      }
+      function rnd(i, seed) {
+        var x = Math.sin(i * 12.9898 + seed * 78.233) * 43758.5453;
+        return x - Math.floor(x);
+      }
+      var curves = {
+        explosion: function (i) { return i < 17 ? .04 + .1 * rnd(i, 1) : Math.min(.97, .55 + .07 * (i - 17) + .12 * rnd(i, 2)); },
+        normal: function (i) { return .06 + .2 * rnd(i, 3) + (i === 9 ? .12 : 0); },
+        shoplift: function (i) { return i >= 14 && i <= 21 ? .28 + .2 * rnd(i, 4) : .07 + .12 * rnd(i, 5); },
+        missed: function (i) { return .01 * rnd(i, 6); }
+      };
+      var names = { explosion: 'Explosion', normal: 'Normal street', shoplift: 'Shoplifting', missed: 'Missed entirely' };
+      var values = [];
+      var range = document.getElementById('rng');
+      function paint() {
+        var threshold = Number(range.value) / 100;
+        var maxScore = 0;
+        bars.forEach(function (b, i) {
+          var value = values[i] || 0;
+          if (value > maxScore) maxScore = value;
+          b.style.height = Math.max(2, value * 100) + '%';
+          b.classList.toggle('hot', value >= threshold);
+        });
+        thr.style.bottom = (threshold * 100) + '%';
+        document.getElementById('thrl').textContent = 'threshold ' + threshold.toFixed(2);
+        document.getElementById('vs').textContent = maxScore.toFixed(2);
+        var flagged = maxScore >= threshold;
+        var verdict = document.getElementById('verdict');
+        verdict.textContent = flagged ? 'flagged anomalous' : 'normal';
+        verdict.classList.toggle('bad', flagged);
+      }
+      function loadCurve(key) {
+        values = bars.map(function (_, i) { return curves[key](i); });
+        bars.forEach(function (b, i) { b.style.transitionDelay = (i * 14) + 'ms'; });
+        document.getElementById('clipname').textContent = names[key];
+        paint();
+        window.setTimeout(function () { bars.forEach(function (b) { b.style.transitionDelay = '0ms'; }); }, 900);
+      }
+      if (range) range.addEventListener('input', paint);
+      document.querySelectorAll('.tabs button[data-k]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          document.querySelectorAll('.tabs button[data-k]').forEach(function (other) {
+            other.setAttribute('aria-pressed', String(other === button));
+          });
+          loadCurve(button.dataset.k);
+        });
+      });
+      loadCurve('explosion');
+    }
+
+    // Clickable model-pipeline stages.
+    var info = [
+      ['Frames', 'Extracted PNG frames are grouped into 16-frame clips and resized to 112×112.'],
+      ['R3D-18', 'A 3D CNN pretrained on Kinetics-400 turns each clip into a 512-number motion feature. It stays frozen, and features are cached to disk.'],
+      ['32 segments', 'Clip features are mean-pooled into T = 32 segments per video and L2-normalised, so every video has the same shape.'],
+      ['BiGRU', 'Linear(512→256) with ReLU and dropout, then a bidirectional GRU (2×128) reads the segments in both directions. This is the part that trains.'],
+      ['Score', 'An MLP head and sigmoid give each segment a score from 0 to 1. The video score is the maximum across segments.']
+    ];
+    var pipelineButtons = document.querySelectorAll('#pipe button[data-i]');
+    var detail = document.getElementById('detail');
+    function pickStage(index) {
+      pipelineButtons.forEach(function (button, i) {
+        button.setAttribute('aria-selected', String(index === i));
+      });
+      detail.textContent = '';
+      var label = document.createElement('span');
+      label.className = 'cap';
+      label.textContent = info[index][0];
+      detail.appendChild(label);
+      detail.appendChild(document.createTextNode(info[index][1]));
+    }
+    pipelineButtons.forEach(function (button) {
+      button.addEventListener('click', function () { pickStage(Number(button.dataset.i)); });
+    });
+    if (pipelineButtons.length && detail) pickStage(0);
+
+    // Animate pipeline once when it scrolls into view, with a safe fallback.
+    var pipe = document.getElementById('pipe');
+    if (pipe && 'IntersectionObserver' in window) {
+      var seen = false;
+      new IntersectionObserver(function (entries, observer) {
+        if (entries[0].isIntersecting && !seen) {
+          seen = true;
+          observer.disconnect();
+          if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+          pipelineButtons.forEach(function (button, i) {
+            window.setTimeout(function () {
+              button.classList.add('sweep');
+              window.setTimeout(function () { button.classList.remove('sweep'); }, 380);
+            }, i * 260);
+          });
+        }
+      }, { threshold: .6 }).observe(pipe);
+    }
+
+    // Copy buttons: use Clipboard API where available, then fall back to selection/copy.
+    document.querySelectorAll('.copy').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var pre = button.parentNode.querySelector('pre');
+        var textToCopy = pre ? pre.innerText : '';
+        function fallbackCopy() {
+          var area = document.createElement('textarea');
+          area.value = textToCopy;
+          area.setAttribute('readonly', '');
+          area.style.position = 'fixed';
+          area.style.opacity = '0';
+          document.body.appendChild(area);
+          area.select();
+          var ok = false;
+          try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+          area.remove();
+          button.textContent = ok ? 'Copied' : 'Select code manually';
+        }
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(textToCopy).then(function () {
+            button.textContent = 'Copied';
+          }).catch(fallbackCopy);
+        } else {
+          fallbackCopy();
+        }
+        window.setTimeout(function () { button.textContent = 'Copy'; }, 1800);
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
 </script>
 </body>
 </html>
+
