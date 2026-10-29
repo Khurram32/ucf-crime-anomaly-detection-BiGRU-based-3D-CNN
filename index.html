@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UCF-Crime anomaly detection with a BiGRU and a 3D CNN</title>
+<meta name="description" content="Weakly supervised video anomaly detection on UCF-Crime: a frozen Kinetics-pretrained R3D-18, a BiGRU temporal head and a multiple-instance ranking loss. 0.844 video-level ROC AUC.">
+<meta name="theme-color" content="#11120F">
+<meta property="og:title" content="UCF-Crime anomaly detection with a BiGRU and a 3D CNN">
+<meta property="og:description" content="Learning to flag crimes in surveillance video from one label per video. Interactive walkthrough, results and code.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,300..800&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body id="top">
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="bar-in">
+    <a class="brand" href="#top">
+      <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="1" width="26" height="26" rx="5" fill="currentColor"/><path d="M4 18h5l2-3 3 9 3-16 2 10h5" fill="none" stroke="#11120F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>UCF-Crime anomaly detection</span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#idea">The idea</a>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#results">Results</a>
+      <a href="#run">Run it</a>
+    </nav>
+    <a class="btn btn-small" href="https://github.com/Khurram32/ucf-crime-anomaly-detection-BiGRU-based-3D-CNN">GitHub</a>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- HERO -->
+<section class="hero wrap">
+  <h1>Teaching a model to spot a crime without ever showing it where</h1>
+  <div class="hero-side">
+    <p>A frozen Kinetics-pretrained 3D CNN watches the video, a bidirectional GRU gives every moment its context, and a ranking loss learns from a single label per video. On the 290 official UCF-Crime test videos it reaches <strong>0.844 ROC AUC</strong>.</p>
+    <p class="hero-actions">
+      <a class="btn" href="https://github.com/Khurram32/ucf-crime-anomaly-detection-BiGRU-based-3D-CNN">View the code</a>
+      <a class="btn btn-ghost" href="#results">See the results</a>
+    </p>
+  </div>
+
+  <figure class="scope" id="scope">
+    <div class="stage">
+      <div class="screen" id="screen">
+        <canvas id="cam" width="480" height="270" aria-label="Simulated surveillance camera view" role="img"></canvas>
+        <span class="hud hud-tl"><i class="rec" aria-hidden="true"></i>CAM 07</span>
+        <span class="hud hud-tr" id="hud-time">0:00 / 3:12</span>
+        <span class="hud hud-bl" id="hud-alert" hidden>Anomaly flagged</span>
+      </div>
+      <div class="trace-wrap">
+        <svg class="trace" id="trace" viewBox="0 0 960 200" role="slider" tabindex="0" aria-label="Video timeline, 32 segments" aria-valuemin="1" aria-valuemax="32" aria-valuenow="1">
+          <defs><linearGradient id="areaG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#DAD6CC" stop-opacity=".28"/><stop offset="1" stop-color="#DAD6CC" stop-opacity="0"/></linearGradient></defs>
+          <g id="bars"></g>
+          <path id="area" class="area" d=""/>
+          <path id="line" class="line" d=""/>
+          <line class="base" x1="0" x2="960" y1="190" y2="190"/>
+          <line class="thr" x1="0" x2="960" y1="105" y2="105"/>
+          <path id="mx" class="mx" d="M-7 -11 L7 -11 L0 0 Z"/>
+          <g id="ph" class="ph"><line x1="0" x2="0" y1="2" y2="190"/><circle cx="0" cy="190" r="6"/></g>
+        </svg>
+        <span class="thr-label">Decision threshold</span>
+      </div>
+      <div class="axis"><span>0:00</span><span>One bar per segment, 32 in all</span><span>3:12</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="controls">
+        <button class="btn btn-small" id="btn-play" type="button">Play</button>
+        <div class="seg" role="group" aria-label="Clip type">
+          <button type="button" id="seg-anom" aria-pressed="true">Anomalous</button>
+          <button type="button" id="seg-normal" aria-pressed="false">Normal</button>
+        </div>
+        <button class="btn btn-small btn-ghost" id="btn-new" type="button">New clip</button>
+      </div>
+      <dl class="readout">
+        <div><dt>Playing segment</dt><dd id="r-seg">1 of 32</dd></div>
+        <div><dt>Segment score</dt><dd id="r-score">0.10</dd></div>
+        <div class="main">
+          <dt>Video score, the highest segment</dt>
+          <dd id="r-video">0.00</dd>
+          <dd id="r-verdict" class="verdict">Not flagged</dd>
+        </div>
+      </dl>
+      <figcaption>Drag the timeline, or focus it and use the arrow keys. This is an illustrative simulation drawn in your browser: the scene and the scores are generated, not model output or dataset footage. The real threshold is picked on validation videos; 0.50 here is for show.</figcaption>
+    </div>
+  </figure>
+</section>
+
+<!-- IDEA -->
+<section class="sec wrap" id="idea">
+  <div class="split">
+    <div class="prose">
+      <h2>One label per video, no timestamps</h2>
+      <p>UCF-Crime's training videos carry a single tag: normal, or one of the anomaly types. Nobody marked the seconds where the burglary happens. Multiple-instance learning treats each video as a bag of segments. If the bag is anomalous, at least one segment must be. If it is normal, none are.</p>
+      <p>Training then asks one question. Does the most suspicious segment of an anomalous video score higher than the most suspicious segment of a normal one? The ranking loss on the right is exactly that question, and the sliders let you feel how it behaves.</p>
+      <p>Two small extra terms, each weighted 8e-5, keep scores smooth from one segment to the next and stop the model from flagging a whole video at once.</p>
+    </div>
+
+    <div class="lab" aria-labelledby="lab-title">
+      <h3 id="lab-title">The ranking loss</h3>
+      <div class="field">
+        <label for="in-a">Highest score in an anomalous video</label>
+        <output id="out-a" for="in-a">0.62</output>
+        <input id="in-a" class="range range-a" type="range" min="0" max="1" step="0.01" value="0.62">
+      </div>
+      <div class="field">
+        <label for="in-n">Highest score in a normal video</label>
+        <output id="out-n" for="in-n">0.35</output>
+        <input id="in-n" class="range range-n" type="range" min="0" max="1" step="0.01" value="0.35">
+      </div>
+      <div class="numline" aria-hidden="true">
+        <span class="nl-gap" id="nl-gap"></span>
+        <span class="nl-dot nl-a" id="nl-a"></span>
+        <span class="nl-dot nl-n" id="nl-n"></span>
+      </div>
+      <p class="loss-eq" id="loss-eq">max(0, 1 − 0.62 + 0.35)</p>
+      <div class="loss-row">
+        <div class="meter" aria-hidden="true"><span id="loss-fill"></span></div>
+        <strong class="loss-val" id="loss-val">0.73</strong>
+      </div>
+      <p class="loss-note" id="loss-note"></p>
+    </div>
+  </div>
+</section>
+
+<!-- PIPELINE -->
+<section class="sec sec-tint" id="pipeline">
+  <div class="wrap">
+    <h2>From raw frames to one number per video</h2>
+    <p class="lede">Seven steps. Only the middle three are trained, which is why the whole head has just 444,289 parameters.</p>
+
+    <ol class="rail" id="rail" style="--p:0"></ol>
+    <div class="brackets" aria-hidden="true">
+      <span class="br br-frozen">Frozen, features cached</span>
+      <span class="br br-trained">Trained, 444,289 parameters</span>
+    </div>
+
+    <div class="detail" aria-live="polite">
+      <div class="detail-main">
+        <p class="badge" id="step-badge">Data</p>
+        <h3 id="step-title"></h3>
+        <p id="step-text"></p>
+      </div>
+      <dl class="shapes">
+        <div><dt>Goes in</dt><dd id="step-in"></dd></div>
+        <div><dt>Comes out</dt><dd id="step-out"></dd></div>
+      </dl>
+      <div class="detail-nav">
+        <button class="btn btn-small btn-ghost" id="step-prev" type="button">Previous</button>
+        <button class="btn btn-small" id="step-next" type="button">Next step</button>
+        <button class="btn btn-small btn-ghost" id="step-play" type="button">Play through</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- RESULTS -->
+<section class="sec wrap" id="results">
+  <h2>What it learned, and where it fails</h2>
+  <div class="split split-results">
+    <div>
+      <div class="kpis">
+        <article class="kpi kpi-ring">
+          <svg class="ring" viewBox="0 0 80 80" aria-hidden="true"><defs><linearGradient id="ringG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8A9B3C"/><stop offset="1" stop-color="#DAD6CC"/></linearGradient></defs><circle class="ring-bg" cx="40" cy="40" r="34"/><circle class="ring-fg" cx="40" cy="40" r="34"/></svg>
+          <div><p class="kpi-label">Test ROC AUC, video level</p><p class="kpi-val" data-count="0.844" data-dec="3">0.844</p></div>
+        </article>
+        <article class="kpi"><p class="kpi-label">Approximate false alarm rate</p><p class="kpi-val" data-count="9" data-suffix="%">9%</p><p class="kpi-note">on normal test videos</p></article>
+        <article class="kpi"><p class="kpi-label">Official test videos</p><p class="kpi-val" data-count="290">290</p><p class="kpi-note">UCF-Crime test split</p></article>
+        <article class="kpi"><p class="kpi-label">Trainable parameters</p><p class="kpi-val" data-count="444289">444,289</p><p class="kpi-note">frozen backbone excluded</p></article>
+      </div>
+      <div class="prose prose-tight">
+        <p>The threshold was chosen with Youden's J on a stratified 10% validation split (about 160 videos), then applied to the test set without changes. The checkpoint with the best validation AUC is the one kept.</p>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="h3-plain">Share of test videos detected, by class</h3>
+      <div class="bands" id="bands">
+        <div class="band">
+          <p>Burglary, Stealing, Vandalism, Explosion</p>
+          <div class="track"><span class="fill fill-good" style="--from:75;--to:85"></span></div>
+          <p class="band-val">roughly 75 to 85%</p>
+        </div>
+        <div class="band">
+          <p>Shoplifting, Robbery</p>
+          <div class="track"><span class="fill fill-bad" style="--from:33;--to:40"></span></div>
+          <p class="band-val">roughly 33 to 40%</p>
+        </div>
+        <div class="scale" aria-hidden="true"><span>0%</span><span>50%</span><span>100%</span></div>
+      </div>
+
+      <h3 class="h3-plain">Two videos that break it</h3>
+      <ul class="fails">
+        <li><strong>Abuse028</strong> scores 0 on every segment, so the model sees nothing at all.</li>
+        <li><strong>Arrest007</strong> scores close to 1 from the very first segment, before anything has happened.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="plots" id="plots">
+    <h3 class="h3-plain">Plots from the run</h3>
+    <div class="plot-grid">
+      <figure><button type="button" class="plot-btn"><img src="assets/roc_curve.png" alt="ROC curve on the UCF-Crime test videos"></button><figcaption>ROC curve on the test videos</figcaption></figure>
+      <figure><button type="button" class="plot-btn"><img src="assets/class_detection.png" alt="Detection rate for each anomaly class"></button><figcaption>Detection by class</figcaption></figure>
+      <figure><button type="button" class="plot-btn"><img src="assets/training_curves.png" alt="Training loss and validation AUC over 100 epochs"></button><figcaption>Training curves over 100 epochs</figcaption></figure>
+      <figure><button type="button" class="plot-btn"><img src="assets/score_timelines.png" alt="Segment score timelines for example test videos"></button><figcaption>Segment scores on example videos</figcaption></figure>
+    </div>
+  </div>
+
+  <div class="caveats">
+    <h3 class="h3-plain">Read the numbers carefully</h3>
+    <ul>
+      <li>The AUC is computed per video. Most UCF-Crime papers report frame-level AUC, so the two are not directly comparable.</li>
+      <li>Validation videos come from the training set. There is no separate tuning set.</li>
+      <li>One seed, one run, no confidence intervals. Validation AUC is noisy, with visible dips around epochs 27 and 75.</li>
+      <li>The Kaggle frames are low resolution and sparsely sampled.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- RUN -->
+<section class="sec sec-tint" id="run">
+  <div class="wrap">
+    <h2>Run it yourself</h2>
+    <p class="lede">The code is one script, <code>ucf_crime_anomaly_frames.py</code>. It indexes the frames, extracts features, trains, evaluates and writes the plots. A GPU helps for feature extraction.</p>
+
+    <div class="run-grid">
+      <div class="run-step">
+        <h3>Get the code</h3>
+        <div class="code"><button class="copy" type="button" data-copy="clone">Copy</button><pre id="clone">git clone https://github.com/Khurram32/ucf-crime-anomaly-detection-BiGRU-based-3D-CNN.git
+cd ucf-crime-anomaly-detection-BiGRU-based-3D-CNN
+pip install -r requirements.txt</pre></div>
+      </div>
+      <div class="run-step">
+        <h3>Get the data</h3>
+        <p>Download the frame-extracted <a href="https://www.kaggle.com/datasets/odins0n/ucf-crime-dataset">UCF-Crime release on Kaggle</a> and unzip it. The data is not redistributed here. It should look like <code>Train/&lt;Class&gt;/&lt;video&gt;_&lt;frame&gt;.png</code> and the same under <code>Test/</code>.</p>
+      </div>
+      <div class="run-step">
+        <h3>Check, then run everything</h3>
+        <div class="code"><button class="copy" type="button" data-copy="stages">Copy</button><pre id="stages">python ucf_crime_anomaly_frames.py --root /path/to/dataset --stage inspect
+python ucf_crime_anomaly_frames.py --root /path/to/dataset --stage all</pre></div>
+        <p>Use <code>--stage extract</code> or <code>--stage train</code> to run one part. Handy flags: <code>--epochs</code>, <code>--T</code>, <code>--clip_len</code>, <code>--max_clips</code>, <code>--train_per_class</code>, <code>--test_per_class</code>, <code>--seed</code>.</p>
+      </div>
+      <div class="run-step">
+        <h3>Reuse the trained head</h3>
+        <p>Load <code>checkpoints/best_model.pt</code> into <code>GRUAnomaly</code>, turn clip features into a bag with <code>to_bag</code>, and take the maximum segment score. Features must come from the same R3D-18 settings used in training. Outputs land in <code>outputs_frames/</code> and cached features in <code>features_frames/</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <p>Built by <a href="https://github.com/Khurram32">Khurram</a>, <a href="https://github.com/SahilRai02">Sahil Rai</a> and <a href="https://github.com/TejasA03">Tejas</a>. Released under the MIT license.</p>
+    <p><a href="https://github.com/Khurram32/ucf-crime-anomaly-detection-BiGRU-based-3D-CNN">Source on GitHub</a> · <a href="#top">Back to top</a></p>
+  </div>
+</footer>
+
+<dialog id="lightbox" aria-label="Enlarged plot"><img alt=""><button type="button" class="close" aria-label="Close">Close</button></dialog>
+
+<script src="script.js"></script>
+</body>
+</html>
